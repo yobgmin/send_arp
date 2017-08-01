@@ -32,8 +32,6 @@ int main(int argc, char ** argv) {
             mac[5]);
 
     close(s);
-    struct ethernet_header * ether_h;
-    struct arp_header * arp_h;
     pcap_t * handle;
     const char * buf;
     u_char packet[42];
