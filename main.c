@@ -8,6 +8,18 @@
 #include <pcap.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <pthread.h>
+#include <unistd.h>
+
+pcap_t * handle;
+void * sendarp(void * arp_packet) {
+    if(pcap_sendpacket(handle, arp_packet, 42) != 0 ) {
+        printf("Couldn't send packet\n");
+        return 0;
+    }
+    sleep(1);
+    return 0;
+}
 
 int main(int argc, char ** argv) {
     char * device = argv[1];
@@ -26,7 +38,7 @@ int main(int argc, char ** argv) {
     printf("%02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
     shutdown(s, SHUT_RDWR);
-    pcap_t * handle;
+
     u_char packet[42];
     u_char arp_packet[42];
     char errbuf[PCAP_ERRBUF_SIZE];
@@ -37,6 +49,8 @@ int main(int argc, char ** argv) {
     u_char targetmac[6];
     u_int32_t net=0;
     struct bpf_program fp;
+    pthread_t thread;
+    int32_t rc;
 
     if(argc != 4) {
         printf("Usage : ./send_arp [device] [sender ip] [target ip]");
@@ -148,7 +162,9 @@ int main(int argc, char ** argv) {
     }
 
     while(1) {
+
         res = pcap_next_ex(handle, &header, &packet2); // header : 패킷이 잡힌 시간, 길이 정보
+
         if (res == 0 || packet == NULL)
             continue;
         if (res == -1 || res == -2) // Error while grabbing packet.
@@ -199,12 +215,12 @@ int main(int argc, char ** argv) {
                 printf("error\n");
         }
 */
-    if(pcap_sendpacket(handle, arp_packet, sizeof(arp_packet)) != 0 ) {
+    if(pcap_sendpacket(handle, arp_packet, 42) != 0 ) {
         printf("Couldn't send packet\n");
         return(2);
     }
 
-    if(pcap_compile(handle, &fp, "icmp||arp", 0, net) == -1) {
+    if(pcap_compile(handle, &fp, "icmp", 0, net) == -1) {
         fprintf(stderr, "Couldn't parse filter %s\n", pcap_geterr(handle));
         return (2);
     }
@@ -215,7 +231,18 @@ int main(int argc, char ** argv) {
     }
 
     while(1) {
+        rc = pthread_create(&thread, NULL, sendarp, (void*)arp_packet);
+        if(rc) {
+            printf("Thread Failed");
+            break;
+        }
         res = pcap_next_ex(handle, &header, &packet2);
+
+        rc = pthread_join(thread, NULL);
+        if(rc) {
+            printf("Thread Failed");
+            break;
+        }
 
         if( res == 0 || packet2 == NULL)
             continue;
